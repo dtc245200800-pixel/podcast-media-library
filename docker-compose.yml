@@ -1,0 +1,131 @@
+version: '3.8'
+
+networks:
+  frontend-net:
+    driver: bridge
+  backend-net:
+    driver: bridge
+    internal: true
+  monitoring-net:
+    driver: bridge
+
+services:
+  # Web App Server (PHP-FPM)
+  app:
+    build: ./app
+    container_name: podcast_app
+    restart: always
+    volumes:
+      - ./app:/var/www/html
+    networks:
+      - frontend-net
+      - backend-net
+    environment:
+      DB_HOST: db
+      DB_NAME: podcast_db
+      DB_USER: podcast_user
+      DB_PASS: Strong_Password_123!
+      
+  # Database MySQL
+  db:
+    image: mysql:8.0
+    container_name: podcast_db
+    restart: always
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: Root_Strong_Password_999!
+      MYSQL_DATABASE: podcast_db
+      MYSQL_USER: podcast_user
+      MYSQL_PASSWORD: Strong_Password_123!
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - db_data:/var/lib/mysql
+    networks:
+      - backend-net
+
+  # phpMyAdmin Management
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: podcast_pma
+    restart: always
+    environment:
+      PMA_HOST: db
+      MYSQL_ROOT_PASSWORD: Root_Strong_Password_999!
+    ports:
+      - "8081:80"
+    networks:
+      - backend-net
+      - frontend-net
+
+  # Nginx Reverse Proxy
+  nginx:
+    build: ./nginx
+    container_name: podcast_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx_logs:/var/log/nginx
+    networks:
+      - frontend-net
+      - monitoring-net
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: podcast_prometheus
+    restart: always
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - monitoring-net
+
+  # cAdvisor
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    container_name: podcast_cadvisor
+    restart: always
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - monitoring-net
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: podcast_grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    networks:
+      - monitoring-net
+
+  # Loki
+  loki:
+    image: grafana/loki:2.8.2
+    container_name: podcast_loki
+    ports:
+      - "3100:3100"
+    networks:
+      - monitoring-net
+
+  # Promtail
+  promtail:
+    image: grafana/promtail:2.8.2
+    container_name: podcast_promtail
+    user: root
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml
+      - ./nginx_logs:/var/log/nginx:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - monitoring-net
+volumes:
+  db_data:
+  nginx_logs:
